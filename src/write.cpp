@@ -10,13 +10,8 @@ extern "C" {
 
 #include "audiorw/audio.hpp"
 
-using namespace audiorw;
-
 #define OUTPUT_BIT_RATE 320000
-
-// http://ffmpeg.org/doxygen/trunk/encode_audio_8c-example.html
-// https://www.ffmpeg.org/doxygen/0.6/output-example_8c-source.html
-// https://ffmpeg.org/doxygen/trunk/transcode_aac_8c-example.html#a23
+#define DEFAULT_FRAME_SIZE 2048
 
 void cleanup_write(
     AVCodecContext * av_context,
@@ -180,6 +175,9 @@ void audiorw::write(
           "Could not allocate output frame for file: " + filename);
   }
   // Allocate the frame size and format
+  if (av_context -> frame_size == 0) {
+    av_context -> frame_size = DEFAULT_FRAME_SIZE;
+  }
   output_frame -> nb_samples     = av_context -> frame_size;
   output_frame -> channel_layout = av_context -> channel_layout;
   output_frame -> format         = av_context -> sample_fmt;
@@ -200,9 +198,10 @@ void audiorw::write(
   output_packet.data = NULL;
   output_packet.size = 0;
 
+
   // Write the samples to the audio
   size_t sample = 0;
-  double audio_data[av_context -> frame_size];
+  double audio_data[audio.size() * av_context -> frame_size];
   while (sample < audio[0].size()) {
     // Determine how much data to send
     int frame_size = std::min(av_context -> frame_size, int(audio[0].size() - sample));
@@ -217,6 +216,9 @@ void audiorw::write(
         audio_data[audio.size() * s + channel] = audio[channel][sample+s];
       }
     }
+
+    // Increment
+    sample += frame_size;
 
     // Fill the frame with audio data
     const uint8_t * audio_data_ = reinterpret_cast<uint8_t *>(audio_data);
@@ -267,9 +269,6 @@ void audiorw::write(
           "Could not write frame for file: " + filename + "\n" +
           "Error: " + std::string(errbuf));
     }
-
-    // Increment
-    sample += frame_size;
   }
 
   // Free the output frame and packet
