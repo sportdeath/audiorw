@@ -2,6 +2,7 @@
 #include <string>
 #include <stdexcept>
 #include <ciso646>
+#include <limits>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -86,6 +87,12 @@ std::vector<std::vector<double>> audiorw::read(
         "Error: " + std::string(errbuf));
   }
 
+  // Make sure there is a channel layout
+  if (codec_context -> channel_layout == 0) {
+    codec_context -> channel_layout =
+      av_get_default_channel_layout(codec_context -> channels);
+  }
+
   // Initialize a resampler
   resample_context = swr_alloc_set_opts(
       NULL,
@@ -127,25 +134,18 @@ std::vector<std::vector<double>> audiorw::read(
   sample_rate = codec_context -> sample_rate;
 
   // Get start and end values in samples
-  end_seconds = std::min(end_seconds, (format_context -> duration)/(double)AV_TIME_BASE);
   start_seconds = std::max(start_seconds, 0.);
   double start_sample = start_seconds * sample_rate;
   double end_sample   = end_seconds   * sample_rate;
+  if (end_sample < 0)
+    end_sample = std::numeric_limits<double>::max();
 
   // Allocate the output vector
-  std::vector<std::vector<double>> audio(
-      codec_context -> channels, 
-      std::vector<double>(end_sample - start_sample));
-
-  // Make sure the frame size is nonzero
-  if (codec_context -> frame_size <= 0) {
-    codec_context -> frame_size = DEFAULT_FRAME_SIZE;
-  }
+  std::vector<std::vector<double>> audio(codec_context -> channels);
 
   // Read the file until either nothing is left
   // or we reach desired end of sample
   int sample = 0;
-  double audio_data[audio.size() * codec_context -> frame_size];
   while (sample < end_sample) {
     // Read from the frame
     error = av_read_frame(format_context, &packet);
@@ -177,6 +177,7 @@ std::vector<std::vector<double>> audiorw::read(
     // Receive a decoded frame from the decoder
     while ((error = avcodec_receive_frame(codec_context, frame)) == 0) {
       // Send the frame to the resampler
+      double audio_data[audio.size() * frame -> nb_samples];
       uint8_t * audio_data_ = reinterpret_cast<uint8_t *>(audio_data);
       const uint8_t ** frame_data = const_cast<const uint8_t**>(frame -> extended_data);
       if ((error = swr_convert(resample_context,
@@ -192,9 +193,9 @@ std::vector<std::vector<double>> audiorw::read(
       // Update the frame
       for (int s = 0; s < frame -> nb_samples; s++) {
         int index = sample + s - start_sample;
-        if ((0 <= index) and (index < (int) audio[0].size())) {
+        if ((0 <= index) and (index < end_sample)) {
           for (int channel = 0; channel < (int) audio.size(); channel++) {
-            audio[channel][index] = audio_data[audio.size() * s + channel];
+            audio[channel].push_back(audio_data[audio.size() * s + channel]);
           }
         }
       }

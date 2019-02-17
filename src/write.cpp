@@ -188,38 +188,43 @@ void audiorw::write(
   packet.data = NULL;
   packet.size = 0;
 
-
   // Write the samples to the audio
   int sample = 0;
   double audio_data[audio.size() * codec_context -> frame_size];
-  while (sample < (int) audio[0].size()) {
-    // Determine how much data to send
-    int frame_size = std::min(codec_context -> frame_size, int(audio[0].size() - sample));
-    frame -> nb_samples = frame_size;
-    
-    // Timestamp the frame
-    frame -> pts = sample;
+  while (true) {
+    if (sample < (int) audio[0].size()) {
+      // Determine how much data to send
+      int frame_size = std::min(codec_context -> frame_size, int(audio[0].size() - sample));
+      frame -> nb_samples = frame_size;
+      
+      // Timestamp the frame
+      frame -> pts = sample;
 
-    // Choose a frame size of the audio
-    for (int s = 0; s < frame_size; s++) {
-      for (int channel = 0; channel < (int) audio.size(); channel++) {
-        audio_data[audio.size() * s + channel] = audio[channel][sample+s];
+      // Choose a frame size of the audio
+      for (int s = 0; s < frame_size; s++) {
+        for (int channel = 0; channel < (int) audio.size(); channel++) {
+          audio_data[audio.size() * s + channel] = audio[channel][sample+s];
+        }
       }
-    }
 
-    // Increment
-    sample += frame_size;
+      // Increment
+      sample += frame_size;
 
-    // Fill the frame with audio data
-    const uint8_t * audio_data_ = reinterpret_cast<uint8_t *>(audio_data);
-    if ((error = swr_convert(resample_context,
-                             frame -> extended_data, frame_size,
-                             &audio_data_          , frame_size)) < 0) {
-      cleanup(codec_context, format_context, resample_context, frame, packet);
-      av_strerror(error, errbuf, errbuf_size);
-      throw std::runtime_error(
-          "Could not resample frame for file: " + filename + "\n" +
-          "Error: " + std::string(errbuf));
+      // Fill the frame with audio data
+      const uint8_t * audio_data_ = reinterpret_cast<uint8_t *>(audio_data);
+      if ((error = swr_convert(resample_context,
+                               frame -> extended_data, frame_size,
+                               &audio_data_          , frame_size)) < 0) {
+        cleanup(codec_context, format_context, resample_context, frame, packet);
+        av_strerror(error, errbuf, errbuf_size);
+        throw std::runtime_error(
+            "Could not resample frame for file: " + filename + "\n" +
+            "Error: " + std::string(errbuf));
+      }
+    } else {
+      // Enter draining mode
+      av_frame_free(&frame);
+      frame = NULL;
     }
 
     // Send a frame to the encoder to encode
@@ -243,8 +248,11 @@ void audiorw::write(
       }
     }
 
+    // If we drain to the end, end the loop 
+    if (error == AVERROR_EOF) {
+      break;
     // If there was an error with the decoder
-    if (error != AVERROR(EAGAIN)) {
+    } else if (error != AVERROR(EAGAIN)) {
       cleanup(codec_context, format_context, resample_context, frame, packet);
       av_strerror(error, errbuf, errbuf_size);
       throw std::runtime_error(

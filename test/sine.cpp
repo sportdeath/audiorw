@@ -16,14 +16,23 @@ std::vector<double> sine(double frequency, double duration, double sample_rate) 
   return s;
 }
 
-int main() {
+void a(std::string extension) {
   double sample_rate = 44100;
   std::vector<double> s_left  = sine(440, 2, sample_rate);
-  std::vector<double> s_right = sine(660, 2, sample_rate);
+  std::vector<double> s_right  = sine(880, 2, sample_rate);
 
   std::vector<std::vector<double>> s = {s_left, s_right};
 
-  audiorw::write(s, "a.flac", sample_rate);
+  audiorw::write(s, "a." + extension, sample_rate);
+}
+
+int main() {
+  a("wav");
+  a("aif");
+  a("mp3");
+  a("mp4");
+  a("flac");
+  a("ogg");
 
   return 0;
 }

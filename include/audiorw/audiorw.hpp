@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <string>
-#include <limits>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -18,7 +17,7 @@ std::vector<std::vector<double>> read(
     const std::string & filename,
     double & sample_rate,
     double start_seconds=0,
-    double end_seconds=std::numeric_limits<double>::max());
+    double end_seconds=-1);
 
 void write(
     const std::vector<std::vector<double>> & audio,
