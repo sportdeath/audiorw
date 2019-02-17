@@ -23,7 +23,7 @@ int main() {
 
   std::vector<std::vector<double>> s = {s_left, s_right};
 
-  audiorw::write(s, "a.mp3", sample_rate);
+  audiorw::write(s, "a.flac", sample_rate);
 
   return 0;
 }

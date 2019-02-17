@@ -214,7 +214,7 @@ void audiorw::write(
     const uint8_t * audio_data_ = reinterpret_cast<uint8_t *>(audio_data);
     if ((error = swr_convert(resample_context,
                              frame -> extended_data, frame_size,
-                             &audio_data_                 , frame_size)) < 0) {
+                             &audio_data_          , frame_size)) < 0) {
       cleanup(codec_context, format_context, resample_context, frame, packet);
       av_strerror(error, errbuf, errbuf_size);
       throw std::runtime_error(

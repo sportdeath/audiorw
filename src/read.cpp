@@ -12,22 +12,6 @@ extern "C" {
 
 using namespace audiorw;
 
-void audiorw::cleanup(
-    AVCodecContext * codec_context,
-    AVFormatContext * format_context,
-    SwrContext * resample_context,
-    AVFrame * frame,
-    AVPacket packet) {
-  // Properly free any allocated space
-  avcodec_close(codec_context);
-  avcodec_free_context(&codec_context);
-  avio_closep(&format_context -> pb);
-  avformat_free_context(format_context);
-  swr_free(&resample_context);
-  av_frame_free(&frame);
-  av_packet_unref(&packet);
-}
-
 std::vector<std::vector<double>> audiorw::read(
     const std::string & filename,
     double & sample_rate,
@@ -164,7 +148,10 @@ std::vector<std::vector<double>> audiorw::read(
   double audio_data[audio.size() * codec_context -> frame_size];
   while (sample < end_sample) {
     // Read from the frame
-    if ((error = av_read_frame(format_context, &packet)) < 0) {
+    error = av_read_frame(format_context, &packet);
+    if (error == AVERROR_EOF) {
+      break;
+    } else if (error < 0) {
       cleanup(codec_context, format_context, resample_context, frame, packet);
       av_strerror(error, errbuf, errbuf_size);
       throw std::runtime_error(
@@ -190,11 +177,11 @@ std::vector<std::vector<double>> audiorw::read(
     // Receive a decoded frame from the decoder
     while ((error = avcodec_receive_frame(codec_context, frame)) == 0) {
       // Send the frame to the resampler
-      uint8_t ** audio_data_ = reinterpret_cast<uint8_t **>(audio_data);
-      const uint8_t * frame_data = *(frame -> extended_data);
+      uint8_t * audio_data_ = reinterpret_cast<uint8_t *>(audio_data);
+      const uint8_t ** frame_data = const_cast<const uint8_t**>(frame -> extended_data);
       if ((error = swr_convert(resample_context,
-                               audio_data_, frame -> nb_samples,
-                               &frame_data, frame -> nb_samples)) < 0) {
+                               &audio_data_, frame -> nb_samples,
+                               frame_data  , frame -> nb_samples)) < 0) {
         cleanup(codec_context, format_context, resample_context, frame, packet);
         av_strerror(error, errbuf, errbuf_size);
         throw std::runtime_error(
@@ -204,9 +191,9 @@ std::vector<std::vector<double>> audiorw::read(
 
       // Update the frame
       for (int s = 0; s < frame -> nb_samples; s++) {
-        for (int channel = 0; channel < (int) audio.size(); channel++) {
-          int index = sample + s - start_sample;
-          if ((0 <= index) and (index < (int) audio[0].size())) {
+        int index = sample + s - start_sample;
+        if ((0 <= index) and (index < (int) audio[0].size())) {
+          for (int channel = 0; channel < (int) audio.size(); channel++) {
             audio[channel][index] = audio_data[audio.size() * s + channel];
           }
         }
@@ -230,4 +217,20 @@ std::vector<std::vector<double>> audiorw::read(
   cleanup(codec_context, format_context, resample_context, frame, packet);
 
   return audio;
+}
+
+void audiorw::cleanup(
+    AVCodecContext * codec_context,
+    AVFormatContext * format_context,
+    SwrContext * resample_context,
+    AVFrame * frame,
+    AVPacket packet) {
+  // Properly free any allocated space
+  avcodec_close(codec_context);
+  avcodec_free_context(&codec_context);
+  avio_closep(&format_context -> pb);
+  avformat_free_context(format_context);
+  swr_free(&resample_context);
+  av_frame_free(&frame);
+  av_packet_unref(&packet);
 }
