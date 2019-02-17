@@ -135,10 +135,14 @@ std::vector<std::vector<double>> audiorw::read(
 
   // Get start and end values in samples
   start_seconds = std::max(start_seconds, 0.);
-  double start_sample = start_seconds * sample_rate;
-  double end_sample   = end_seconds   * sample_rate;
-  if (end_sample < 0)
-    end_sample = std::numeric_limits<double>::max();
+  double duration = (format_context -> duration)/(double)AV_TIME_BASE;
+  if (end_seconds < 0) {
+    end_seconds = duration;
+  } else {
+    end_seconds = std::min(end_seconds, duration);
+  }
+  double start_sample = std::floor(start_seconds * sample_rate);
+  double end_sample   = std::floor(end_seconds   * sample_rate);
 
   // Allocate the output vector
   std::vector<std::vector<double>> audio(codec_context -> channels);
