@@ -1,6 +1,7 @@
+#include <iostream>
 #include <cmath>
 
-#include <audiorw/audio.hpp>
+#include <audiorw/audiorw.hpp>
 
 std::vector<double> sine(double frequency, double duration, double sample_rate) {
   size_t length = duration * sample_rate;
@@ -17,10 +18,12 @@ std::vector<double> sine(double frequency, double duration, double sample_rate) 
 
 int main() {
   double sample_rate = 44100;
-  std::vector<double> s = sine(440, 2, sample_rate);
-  std::vector<std::vector<double>> s_ = {s};
+  std::vector<double> s_left  = sine(440, 2, sample_rate);
+  std::vector<double> s_right = sine(660, 2, sample_rate);
 
-  audiorw::write(s_, "a.mp3", sample_rate);
+  std::vector<std::vector<double>> s = {s_left, s_right};
+
+  audiorw::write(s, "a.mp3", sample_rate);
 
   return 0;
 }

@@ -8,305 +8,226 @@ extern "C" {
 #include <libswresample/swresample.h>
 };
 
-#include "audiorw/audio.hpp"
+#include "audiorw/audiorw.hpp"
 
 using namespace audiorw;
 
-double read_sample(
-    const AVCodecContext * codec_context,
-    const AVFrame * frame,
-    size_t sample,
-    size_t channel) {
-
-  // where it is stored
-  uint8_t * frameBuffer;
-  // its index
-  int sampleLocation;
-
-  // Is it planar?
-  // I.E. Is each channel in its own vector
-  if (av_sample_fmt_is_planar(codec_context -> sample_fmt)) {
-    // yes, we search through the channel
-    frameBuffer = frame -> extended_data[channel];
-    sampleLocation = sample;
-  } else {
-    // no, we un-interleave them
-    frameBuffer = frame -> extended_data[0];
-    sampleLocation = sample * (codec_context -> channels) + channel;
-  }
-
-  // the number of bytes in an audio sample
-  int sampleBytes = av_get_bytes_per_sample(codec_context -> sample_fmt);
-
-  // the raw output value
-  int64_t rawValue;
-
-  switch(sampleBytes) {
-    case 1:
-      rawValue = ((uint8_t *)(frameBuffer))[sampleLocation];
-      // its unsigned
-      rawValue -= 127;
-      break;
-
-    case 2:
-      rawValue = ((int16_t *)(frameBuffer))[sampleLocation];
-      break;
-
-    case 4:
-      rawValue = ((int32_t *)(frameBuffer))[sampleLocation];
-      break;
-
-    case 8:
-      rawValue = ((int64_t *)(frameBuffer))[sampleLocation];
-      break;
-
-    default:
-      throw std::runtime_error(
-          "Sample format is invalid!");
-      return 0;
-  }
-
-  // if the raw values are padded for uneven bit depths (i.e. 24)
-  if (codec_context -> bits_per_raw_sample > 0) {
-    rawValue = (rawValue >> (sampleBytes * 8 - codec_context -> bits_per_raw_sample));
-  }
-
-  double value;
-
-  switch (codec_context -> sample_fmt) {
-    case AV_SAMPLE_FMT_U8:
-    case AV_SAMPLE_FMT_U8P:
-    case AV_SAMPLE_FMT_S16:
-    case AV_SAMPLE_FMT_S16P:
-    case AV_SAMPLE_FMT_S32:
-    case AV_SAMPLE_FMT_S32P:
-      // value / (2 ^ (number of Unsigned Bits) - 1)
-      value = rawValue / (double)((1 << (sampleBytes * 8 - 1)) - 1);
-      break;
-    case AV_SAMPLE_FMT_FLT:
-    case AV_SAMPLE_FMT_FLTP:
-      value = static_cast<double>(*reinterpret_cast<float *>(&rawValue));
-      break;
-    case AV_SAMPLE_FMT_DBL:
-    case AV_SAMPLE_FMT_DBLP:
-      value = *reinterpret_cast<double *>(&rawValue);
-      break;
-    default:
-      throw std::runtime_error(
-          "Sample format is invalid!");
-      return 0;
-  }
-
-  return value;
-
+void audiorw::cleanup(
+    AVCodecContext * codec_context,
+    AVFormatContext * format_context,
+    SwrContext * resample_context,
+    AVFrame * frame,
+    AVPacket packet) {
+  // Properly free any allocated space
+  avcodec_close(codec_context);
+  avcodec_free_context(&codec_context);
+  avio_closep(&format_context -> pb);
+  avformat_free_context(format_context);
+  swr_free(&resample_context);
+  av_frame_free(&frame);
+  av_packet_unref(&packet);
 }
 
-void read_frame(
-    const AVCodecContext * codec_context, 
-    const AVFrame * frame,
-    std::vector<std::vector<double>> & output,
-    double start_sample,
-    double end_sample,
-    size_t * sample_offset) {
-
-  size_t num_samples = frame -> nb_samples;
-  size_t num_channels = frame -> channels;
-
-  // for every channel and sample in the frame
-  for (size_t channel = 0; channel < num_channels; channel++) {
-    for (size_t sample = 0; sample < num_samples; sample++) {
-
-      // If the sample is within our sample range
-      if (sample + *sample_offset >= start_sample and
-          sample + *sample_offset < end_sample) {
-
-        // get the sample value
-        double value = read_sample(codec_context, frame, sample, channel);
-
-        // put it in the output
-        output[channel][sample + *sample_offset - start_sample] = value;
-      }
-    }
-  }
-
-  *sample_offset += num_samples;
-}
-
-std::vector<std::vector<double>> read(
+std::vector<std::vector<double>> audiorw::read(
     const std::string & filename,
     double & sample_rate,
     double start_seconds,
     double end_seconds) {
 
-  if (start_seconds < end_seconds) {
-    throw std::invalid_argument(
-        "The start read time is after the end read time!");
-  }
-
-  if (start_seconds < 0 or end_seconds < 0) {
-    throw std::invalid_argument(
-        "Start or end time is negative!");
-  }
-
-  // Begin to set up FFMPEG
+  // Get a buffer for writing errors to
+  size_t errbuf_size = 200;
+  char errbuf[200];
+  
+  // Initialize variables
+  AVCodecContext * codec_context = NULL;
+  AVFormatContext * format_context = NULL;
+  SwrContext * resample_context = NULL;
+  AVFrame * frame = NULL;
+  AVPacket packet;
 
   // Open the file and get format information
-  AVFormatContext * format_context = NULL;
-  if (avformat_open_input(&format_context, filename.c_str(), NULL, 0) != 0) {
+  int error = avformat_open_input(&format_context, filename.c_str(), NULL, 0);
+  if (error != 0) {
+    av_strerror(error, errbuf, errbuf_size);
     throw std::invalid_argument(
-        "Could not open audio file: " + filename);
+        "Could not open audio file: " + filename + "\n" +
+        "Error: " + std::string(errbuf));
   }
 
   // Get stream info
-  if (avformat_find_stream_info(format_context, NULL) < 0) {
-    avformat_close_input(&format_context);
+  if ((error = avformat_find_stream_info(format_context, NULL)) < 0) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
+    av_strerror(error, errbuf, errbuf_size);
     throw std::runtime_error(
-        "Could not get information about the stream in file: " + filename);
+        "Could not get information about the stream in file: " + filename + "\n" +
+        "Error: " + std::string(errbuf));
   }
 
-  // Find an audio stream
-  // And its decoder
+  // Find an audio stream and its decoder
   AVCodec * codec = NULL;
   int audio_stream_index = av_find_best_stream(
       format_context, 
       AVMEDIA_TYPE_AUDIO, 
       -1, -1, &codec, 0);
   if (audio_stream_index < 0) {
-    avformat_close_input(&format_context);
+    cleanup(codec_context, format_context, resample_context, frame, packet);
     throw std::runtime_error(
         "Could not determine the best stream to use in the file: " + filename);
   }
 
   // Allocate context for decoding the codec
-  AVCodecContext * codec_context = avcodec_alloc_context3(codec);
-  if (codec_context == NULL) {
-    avformat_close_input(&format_context);
+  codec_context = avcodec_alloc_context3(codec);
+  if (!codec_context) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
     throw std::runtime_error(
         "Could not allocate a decoding context for file: " + filename);
   }
 
   // Fill the codecContext with parameters of the codec
-  if (avcodec_parameters_to_context(
+  if ((error = avcodec_parameters_to_context(
         codec_context, 
         format_context -> streams[audio_stream_index] -> codecpar
-        ) != 0) {
-    avcodec_close(codec_context);
-    avcodec_free_context(&codec_context);
-    avformat_close_input(&format_context);
+        )) != 0) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
     throw std::runtime_error(
         "Could not set codec context parameters for file: " + filename);
   }
 
-  // Ask for non planar data
-  codec_context -> request_sample_fmt =
-    av_get_alt_sample_fmt(codec_context -> sample_fmt, 0);
-
   // Initialize the decoder
-  if (avcodec_open2(codec_context, codec, NULL) != 0) {
-    avcodec_close(codec_context);
-    avcodec_free_context(&codec_context);
-    avformat_close_input(&format_context);
+  if ((error = avcodec_open2(codec_context, codec, NULL)) != 0) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
+    av_strerror(error, errbuf, errbuf_size);
     throw std::runtime_error(
-        "Could not initialize the decoder for file: " + filename);
+        "Could not initialize the decoder for file: " + filename + "\n" +
+        "Error: " + std::string(errbuf));
   }
 
-  // Allocate a frame
-  AVFrame * frame = NULL;
-  if ((frame = av_frame_alloc()) == NULL) {
-    avcodec_close(codec_context);
-    avcodec_free_context(&codec_context);
-    avformat_close_input(&format_context);
+  // Initialize a resampler
+  resample_context = swr_alloc_set_opts(
+      NULL,
+      // Output
+      codec_context -> channel_layout,
+      AV_SAMPLE_FMT_DBL,
+      sample_rate,
+      // Input
+      codec_context -> channel_layout,
+      codec_context -> sample_fmt,
+      sample_rate,
+      0, NULL);
+  if (!resample_context) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
+    throw std::runtime_error(
+        "Could not allocate resample context for file: " + filename);
+  }
+
+  // Open the resampler context with the specified parameters
+  if ((error = swr_init(resample_context)) < 0) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
+    throw std::runtime_error(
+        "Could not open resample context for file: " + filename);
+  }
+
+  // Initialize the input frame
+  if (!(frame = av_frame_alloc())) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
     throw std::runtime_error(
         "Could not allocate audio frame for file: " + filename);
   }
 
   // prepare a packet
-  AVPacket packet;
   av_init_packet(&packet);
-
-  // END OF FFMPEG SET UP
+  packet.data = NULL;
+  packet.size = 0;
 
   // fetch the sample rate
   sample_rate = codec_context -> sample_rate;
 
   // Get start and end values in samples
-  if (end_seconds == 0)
-    end_seconds = (format_context -> duration)/(double)AV_TIME_BASE;
+  end_seconds = std::min(end_seconds, (format_context -> duration)/(double)AV_TIME_BASE);
+  start_seconds = std::max(start_seconds, 0.);
   double start_sample = start_seconds * sample_rate;
-  double end_sample = end_seconds * sample_rate;
+  double end_sample   = end_seconds   * sample_rate;
 
   // Allocate the output vector
-  std::vector<std::vector<double>> output(
+  std::vector<std::vector<double>> audio(
       codec_context -> channels, 
       std::vector<double>(end_sample - start_sample));
 
-  int read_error;
-  size_t sample_offset = 0;
+  // Make sure the frame size is nonzero
+  if (codec_context -> frame_size <= 0) {
+    codec_context -> frame_size = DEFAULT_FRAME_SIZE;
+  }
 
   // Read the file until either nothing is left
   // or we reach desired end of sample
-  while (sample_offset < end_sample and
-      (read_error = av_read_frame(format_context, &packet)) != AVERROR_EOF) {
-
-    // Are we reading correctly?
-    if (read_error != 0) {
+  int sample = 0;
+  double audio_data[audio.size() * codec_context -> frame_size];
+  while (sample < end_sample) {
+    // Read from the frame
+    if ((error = av_read_frame(format_context, &packet)) < 0) {
+      cleanup(codec_context, format_context, resample_context, frame, packet);
+      av_strerror(error, errbuf, errbuf_size);
       throw std::runtime_error(
-          "Read error: " + std::to_string(read_error));
-      break;
+          "Error reading from file: " + filename + "\n" +
+          "Error: " + std::string(errbuf));
     }
 
     // Is this the correct stream?
     if (packet.stream_index != audio_stream_index) {
-      // Free the frame buffer and reset
-      av_packet_unref(&packet);
+      // Otherwise move on
       continue;
     }
 
-    // Send the packet to the decoder!
-    if (avcodec_send_packet(codec_context, &packet) == 0) {
-      // Success!
-      // Destroy it :)
-      // free the buffers and reset fields
-      av_packet_unref(&packet);
-    } else  {
-      // Failure!
+    // Send the packet to the decoder
+    if ((error = avcodec_send_packet(codec_context, &packet)) < 0) {
+      cleanup(codec_context, format_context, resample_context, frame, packet);
+      av_strerror(error, errbuf, errbuf_size);
       throw std::runtime_error(
-          "Send packet error!");
-      break;
+          "Could not send packet to decoder for file: " + filename + "\n" +
+          "Error: " + std::string(errbuf));
     }
 
-    // receive the frame
-    while ((read_error = avcodec_receive_frame(codec_context, frame)) == 0) {
-      // read the frame
-      read_frame(
-          codec_context, 
-          frame,
-          output,
-          start_sample,
-          end_sample,
-          &sample_offset);
+    // Receive a decoded frame from the decoder
+    while ((error = avcodec_receive_frame(codec_context, frame)) == 0) {
+      // Send the frame to the resampler
+      uint8_t ** audio_data_ = reinterpret_cast<uint8_t **>(audio_data);
+      const uint8_t * frame_data = *(frame -> extended_data);
+      if ((error = swr_convert(resample_context,
+                               audio_data_, frame -> nb_samples,
+                               &frame_data, frame -> nb_samples)) < 0) {
+        cleanup(codec_context, format_context, resample_context, frame, packet);
+        av_strerror(error, errbuf, errbuf_size);
+        throw std::runtime_error(
+            "Could not resample frame for file: " + filename + "\n" +
+            "Error: " + std::string(errbuf));
+      }
 
-      // free buffers and set fields to defaults
-      av_frame_unref(frame);
+      // Update the frame
+      for (int s = 0; s < frame -> nb_samples; s++) {
+        for (int channel = 0; channel < (int) audio.size(); channel++) {
+          int index = sample + s - start_sample;
+          if ((0 <= index) and (index < (int) audio[0].size())) {
+            audio[channel][index] = audio_data[audio.size() * s + channel];
+          }
+        }
+      }
+
+      // Increment the stamp
+      sample += frame -> nb_samples;
     }
 
-    if (read_error != AVERROR(EAGAIN)) {
+    // Check if the decoder had any errors
+    if (error != AVERROR(EAGAIN)) {
+      cleanup(codec_context, format_context, resample_context, frame, packet);
+      av_strerror(error, errbuf, errbuf_size);
       throw std::runtime_error(
-          "Receive packet error!");
-      break;
+          "Error receiving packet from decoder for file: " + filename + "\n" +
+          "Error: " + std::string(errbuf));
     }
   }
 
-  // Drain the decoder
+  // Cleanup
+  cleanup(codec_context, format_context, resample_context, frame, packet);
 
-  // Clean up
-  // Free all frame data
-  av_frame_free(&frame);
-  // Close the codec context
-  avcodec_close(codec_context);
-  // Free the context
-  avcodec_free_context(&codec_context);
-  avformat_close_input(&format_context);
-
-  return output;
+  return audio;
 }
