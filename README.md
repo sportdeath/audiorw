@@ -22,12 +22,12 @@ encoder or decoder based on an audio file's extension and contents.
 
 To install the library, clone it, build it with ```cmake```, then install it:
 
-   git clone git@github.com:sportdeath/audiorw.git
-   mkdir audiorw/build
-   cd audiorw/build
-   cmake ..
-   make
-   sudo make install
+    git clone git@github.com:sportdeath/audiorw.git
+    mkdir audiorw/build
+    cd audiorw/build
+    cmake ..
+    make
+    sudo make install
 
 ## API
 
@@ -98,4 +98,16 @@ The result is written to a file called "example.flac".
 
 ## Examples
 
-Two simple examples are included in the ```example``` folder. 
+Two simple examples are included in the ```example``` folder. They can be build with
+
+    cd audiorw/build
+    cmake -DBUILD_EXAMPLES=ON ..
+    make
+
+The ```convert``` example converts audio from one format to another:
+
+    ./convert input.ext1 output.ext2
+
+The ```generate_a``` example generates stereo audio files similar to those described in the Write section in a variety of formats.
+
+    ./generate_a
