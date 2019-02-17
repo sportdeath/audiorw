@@ -1,6 +1,7 @@
 # audiorw
 
 A minimal C++ library to read and write audio files powered by FFMPEG.
+
 ```audiorw``` supports reading from and writing to the following file types:
 
 - ```.wav```
@@ -108,6 +109,6 @@ The ```convert``` example converts audio from one format to another:
 
     ./convert input.ext1 output.ext2
 
-The ```generate_a``` example generates stereo audio files similar to those described in the Write section in a variety of formats.
+The ```generate_a``` example generates stereo audio files similar to those described in the Write section in a variety of audio formats.
 
     ./generate_a
