@@ -39,18 +39,26 @@ add_library(${PROJECT_NAME} SHARED ${PROJECT_SOURCES})
 target_link_libraries(${PROJECT_NAME} ${LIBS})
 set(LIBS ${LIBS} ${PROJECT_NAME})
 
+################
+## Installation
+################
+
+install(TARGETS ${PROJECT_NAME}
+        DESTINATION lib)
+install(DIRECTORY include/${PROJECT_NAME}
+        DESTINATION include)
+
 #####################################
 ## Unit Tests
 #####################################
 
-# Add the tests
-enable_testing()
-
-# from list of files we'll create tests test_name.cpp -> test_name
-file(GLOB TEST_SOURCES test/*.cpp)
-foreach(_test_file ${TEST_SOURCES})
-    get_filename_component(_test_name ${_test_file} NAME_WE)
-    add_executable(${_test_name} ${_test_file})
-    target_link_libraries(${_test_name} ${LIBS})
-    add_test(${_test_name} ${_test_name})
-endforeach()
+option(BUILD_EXAMPLES "BUILD_EXAMPLES" OFF)
+if (BUILD_EXAMPLES)
+  # from list of files we'll create examples example_name.cpp -> example_name
+  file(GLOB EXAMPLE_SOURCES example/*.cpp)
+  foreach(_example_file ${EXAMPLE_SOURCES})
+      get_filename_component(_example_name ${_example_file} NAME_WE)
+      add_executable(${_example_name} ${_example_file})
+      target_link_libraries(${_example_name} ${LIBS})
+  endforeach()
+endif()
