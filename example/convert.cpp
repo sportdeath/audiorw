@@ -1,5 +1,5 @@
 #include <iostream>
-#include <audiorw/audiorw.hpp>
+#include <audiorw.hpp>
 
 int main(int argc, char ** argv) {
 

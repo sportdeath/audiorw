@@ -8,7 +8,7 @@ extern "C" {
 #include <libswresample/swresample.h>
 };
 
-#include "audiorw/audiorw.hpp"
+#include "audiorw.hpp"
 
 using namespace audiorw;
 

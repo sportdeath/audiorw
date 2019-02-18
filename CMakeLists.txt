@@ -45,7 +45,7 @@ set(LIBS ${LIBS} ${PROJECT_NAME})
 
 install(TARGETS ${PROJECT_NAME}
         DESTINATION lib)
-install(DIRECTORY include/${PROJECT_NAME}
+install(DIRECTORY include/
         DESTINATION include)
 
 #####################################

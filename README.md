@@ -36,7 +36,7 @@ The library comes with two functions, ```read``` and ```write``` which are inten
 Both functions will automatically choose the right decoder or encoder based on the file extension and file contexts.
 To include the library, simply put this at the header of your document:
 
-    #include <audiorw/audiorw.hpp>
+    #include <audiorw.hpp>
 
 ### Read
 
@@ -51,7 +51,7 @@ Each element of the vector will be in the range [-1,1].
 For example if we wanted to read some samples from a stereo audio file called ```example.wav``` we could do:
 
     #include <vector>
-    #include <audiorw/audiorw.hpp>
+    #include <audiorw.hpp>
 
     double sample_rate;
     std::vector<std::vector<double>> audio = audiorw::read("example.wav", sample_rate);
@@ -79,7 +79,7 @@ The result is written to a file called "example.flac".
 
     #include <vector>
     #include <cmath>
-    #include <audiorw/audiorw.hpp>
+    #include <audiorw.hpp>
 
     double sample_rate = 44100; // samples per second
     double duration = 1; // second

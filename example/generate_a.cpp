@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cmath>
 
-#include <audiorw/audiorw.hpp>
+#include <audiorw.hpp>
 
 std::vector<double> sine(double frequency, double duration, double sample_rate) {
   size_t length = duration * sample_rate;
