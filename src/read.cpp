@@ -93,6 +93,14 @@ std::vector<std::vector<double>> audiorw::read(
       av_get_default_channel_layout(codec_context -> channels);
   }
 
+  // Fetch the sample rate
+  sample_rate = codec_context -> sample_rate;
+  if (sample_rate <= 0) {
+    cleanup(codec_context, format_context, resample_context, frame, packet);
+    throw std::runtime_error(
+        "Sample rate is " + std::to_string(sample_rate));
+  }
+
   // Initialize a resampler
   resample_context = swr_alloc_set_opts(
       NULL,
@@ -129,9 +137,6 @@ std::vector<std::vector<double>> audiorw::read(
   av_init_packet(&packet);
   packet.data = NULL;
   packet.size = 0;
-
-  // fetch the sample rate
-  sample_rate = codec_context -> sample_rate;
 
   // Get start and end values in samples
   start_seconds = std::max(start_seconds, 0.);
