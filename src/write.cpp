@@ -2,6 +2,7 @@
 #include <string>
 #include <stdexcept>
 #include <ciso646>
+#include <algorithm>
 
 extern "C" {
 #include <libavformat/avformat.h>

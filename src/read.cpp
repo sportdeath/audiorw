@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <ciso646>
 #include <limits>
+#include <cmath>
+#include <algorithm>
 
 extern "C" {
 #include <libavformat/avformat.h>
