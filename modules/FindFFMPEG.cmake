@@ -106,6 +106,11 @@ FIND_LIBRARY(FFMPEG_swscale_LIBRARY swscale
   /usr/lib
 )
 
+FIND_LIBRARY(FFMPEG_swresample_LIBRARY swresample
+  /usr/local/lib
+  /usr/lib
+)
+
 FIND_LIBRARY(FFMPEG_z_LIBRARY z
   /usr/local/lib
   /usr/lib
@@ -127,6 +132,10 @@ IF(FFMPEG_INCLUDE_DIR)
         IF(FFMPEG_swscale_LIBRARY)
           LIST(APPEND FFMPEG_BASIC_LIBRARIES ${FFMPEG_swscale_LIBRARY})
         ENDIF(FFMPEG_swscale_LIBRARY)
+
+        IF(FFMPEG_swresample_LIBRARY)
+          LIST(APPEND FFMPEG_BASIC_LIBRARIES ${FFMPEG_swresample_LIBRARY})
+        ENDIF(FFMPEG_swresample_LIBRARY)
 
         SET(FFMPEG_LIBRARIES ${FFMPEG_BASIC_LIBRARIES})
 
